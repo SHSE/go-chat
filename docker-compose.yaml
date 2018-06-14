@@ -1,0 +1,19 @@
+version: '3.4'
+
+services:
+  chat:
+    build: .
+    environment:
+      CHAT_PORT: 3000
+    ports:
+      - 3000
+
+  bench:
+    build:
+      context: .
+      target: build
+    environment:
+      SERVER_URL: chat:3000
+    depends_on:
+      - chat
+    command: ["vgo", "test", "-bench=.", "-run=none"]
