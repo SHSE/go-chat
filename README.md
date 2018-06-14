@@ -86,6 +86,14 @@ n john: hi!
 r ok
 ```
 
+## Config
+
+The server can be configured using environment variables:
+
+Name      | Description
+----------|------------
+CHAT_PORT | TCP port to listen. Default: 3000
+
 ## Architecture
 
 The server consists of two parts: transport and chat logic.

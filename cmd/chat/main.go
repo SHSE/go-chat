@@ -16,8 +16,7 @@ import (
 )
 
 type Config struct {
-	Port    uint16 `required:"true"`
-	Workers uint16 `default:"1"`
+	Port uint16 `default:"3000"`
 }
 
 func main() {
