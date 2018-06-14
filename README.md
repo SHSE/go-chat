@@ -4,7 +4,7 @@ A simple chat server written in Go.
 
 ## Quick Start
 
-To run it locally on port `3000`:
+To run it locally on port `3000` (requires [vgo](https://github.com/golang/vgo)):
 ```bash
 make run
 nc localhost 3000
