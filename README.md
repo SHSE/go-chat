@@ -79,11 +79,11 @@ Lines are labeled:
 ```text
 n Welcome!\n
 c join john\n
-n User john joined
-r ok
-c say hi!
-n john: hi!
-r ok
+n User john joined\n
+r ok\n
+c say hi!\n
+n john: hi!\n
+r ok\n
 ```
 
 ## Config
