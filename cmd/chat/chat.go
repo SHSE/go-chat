@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/pkg/errors"
 	"strings"
 )
 
@@ -21,19 +22,20 @@ const (
 	commandRename = "rename"
 )
 
+var (
+	ErrNameNotUnique   = errors.New("name is not unique")
+	ErrNameRequired    = errors.New("name required")
+	ErrMessageRequired = errors.New("message required")
+	ErrNotJoined       = errors.New("not joined")
+	ErrUnknownCommand  = errors.New("unknown command")
+	ErrAlreadyJoined   = errors.New("already joined")
+)
+
 func NewChat(unicast unicast) *Chat {
 	return &Chat{
 		make(map[int]user, 128),
 		unicast,
 	}
-}
-
-type chatError struct {
-	message string
-}
-
-func (err chatError) Error() string {
-	return err.message
 }
 
 func (chat *Chat) connected(clientId int) {
@@ -53,7 +55,7 @@ func (chat *Chat) command(command command) error {
 	case commandRename:
 		return chat.rename(command.clientId, command.args)
 	default:
-		return chatError{"Unknown command"}
+		return ErrUnknownCommand
 	}
 }
 
@@ -65,20 +67,20 @@ func (chat *Chat) sendToAll(message string) {
 
 func (chat *Chat) rename(userId int, args []string) error {
 	if len(args) != 1 {
-		return chatError{"name required"}
+		return ErrNameRequired
 	}
 
 	current, exists := chat.users[userId]
 
 	if !exists {
-		return chatError{"You must join first"}
+		return ErrNotJoined
 	}
 
 	user := user{userId, args[0]}
 
 	for _, existing := range chat.users {
 		if existing.id != user.id && existing.name == user.name {
-			return chatError{"User already exists"}
+			return ErrNameNotUnique
 		}
 	}
 
@@ -90,20 +92,20 @@ func (chat *Chat) rename(userId int, args []string) error {
 
 func (chat *Chat) join(userId int, args []string) error {
 	if len(args) != 1 {
-		return chatError{"name required"}
+		return ErrNameNotUnique
 	}
 
 	_, exists := chat.users[userId]
 
 	if exists {
-		return chatError{"Already joined"}
+		return ErrAlreadyJoined
 	}
 
 	user := user{userId, args[0]}
 
 	for _, existing := range chat.users {
 		if existing.name == user.name {
-			return chatError{"User already exists"}
+			return ErrNameNotUnique
 		}
 	}
 
@@ -126,13 +128,13 @@ func (chat *Chat) leave(userId int) {
 
 func (chat *Chat) say(userId int, args []string) error {
 	if len(args) < 1 {
-		return chatError{"Message required"}
+		return ErrMessageRequired
 	}
 
 	user, found := chat.users[userId]
 
 	if !found {
-		return chatError{"You must join first"}
+		return ErrNotJoined
 	}
 
 	text := strings.Join(args, " ")

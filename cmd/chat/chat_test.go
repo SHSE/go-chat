@@ -144,3 +144,38 @@ func TestDeliversUserMessages(t *testing.T) {
 
 	u.waitForMessage(t, 2, "john: hello")
 }
+
+func TestReturnsErrorWhenJoinTwice(t *testing.T) {
+	chat, _ := testChat()
+
+	chat.connected(1)
+
+	chat.executeCommandAndExpectSuccess(t, 1, "join", []string{"john"})
+	chat.executeCommandAndExpectError(t, 1, "join", []string{"john"})
+}
+
+func TestReturnsErrorWhenJoinWithoutName(t *testing.T) {
+	chat, _ := testChat()
+
+	chat.connected(1)
+
+	chat.executeCommandAndExpectError(t, 1, "join", []string{})
+}
+
+func TestReturnsErrorWhenCallSayWithoutText(t *testing.T) {
+	chat, _ := testChat()
+
+	chat.connected(1)
+	chat.executeCommandAndExpectSuccess(t, 1, "join", []string{"john"})
+
+	chat.executeCommandAndExpectError(t, 1, "say", []string{})
+}
+
+func TestReturnsErrorWhenRenameWithoutName(t *testing.T) {
+	chat, _ := testChat()
+
+	chat.connected(1)
+	chat.executeCommandAndExpectSuccess(t, 1, "join", []string{"john"})
+
+	chat.executeCommandAndExpectError(t, 1, "rename", []string{})
+}
