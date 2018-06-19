@@ -45,7 +45,7 @@ func (context *testContext) waitForEvent(t *testing.T, event string) {
 	t.Fail()
 }
 
-func runTestServer() (stop func(), address string, textCtx *testContext) {
+func runTestServer(t *testing.T) (stop func(), address string, textCtx *testContext) {
 	ctx, cancel := context.WithCancel(context.Background())
 	logger, _ := zap.NewDevelopment()
 	server := NewServer(logger, prometheus.NewRegistry())
@@ -61,7 +61,7 @@ func runTestServer() (stop func(), address string, textCtx *testContext) {
 	port, err := freeport.GetFreePort()
 
 	if err != nil {
-		panic(err)
+		assert.Nil(t, err)
 	}
 
 	address = fmt.Sprintf("localhost:%d", port)
@@ -80,16 +80,24 @@ func runTestServer() (stop func(), address string, textCtx *testContext) {
 	return
 }
 
+func withServer(t *testing.T, action func(*testContext, string)) {
+	stop, address, ctx := runTestServer(t)
+
+	defer stop()
+
+	action(ctx, address)
+}
+
 func withSession(t *testing.T, action func(*testContext, *Session)) {
-	stop, address, handler := runTestServer()
-	session, err := NewSession(address, handler.events)
+	withServer(t, func(ctx *testContext, address string) {
+		session, err := NewSession(address, ctx.events)
 
-	assert.Nil(t, err)
+		defer session.Close()
 
-	action(handler, session)
+		assert.Nil(t, err)
 
-	session.Close()
-	stop()
+		action(ctx, session)
+	})
 }
 
 func (session *Session) sendCommandAndExpectOK(t *testing.T, name string, args []string) {
@@ -136,4 +144,25 @@ func TestInvokesDisconnectMethodWhenNewClientDisconnected(t *testing.T) {
 		session.Close()
 		assert.Equal(t, <-ctx.connects, <-ctx.disconnects)
 	})
+}
+
+func TestNotifiesClientsOnShutdown(t *testing.T) {
+	var (
+		session *Session
+		testCtx *testContext
+	)
+
+	withServer(t, func(ctx *testContext, address string) {
+		var err error
+
+		session, err = NewSession(address, ctx.events)
+
+		assert.Nil(t, err)
+
+		testCtx = ctx
+	})
+
+	defer session.Close()
+
+	testCtx.waitForEvent(t, MessageServerIsShuttingDown)
 }

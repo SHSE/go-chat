@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+const MessageServerIsShuttingDown = "Server is shutting down"
+
 type client struct {
 	id       int
 	conn     net.Conn
@@ -236,7 +238,7 @@ func (server *Server) dispatch(handler commandHandler) {
 		case <-server.closing:
 			server.connections.Range(func(key, value interface{}) bool {
 				client := value.(client)
-				client.messages <- "Server is shutting down"
+				client.messages <- MessageServerIsShuttingDown
 				client.close()
 				return true
 			})
