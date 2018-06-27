@@ -38,14 +38,13 @@ func NewSession(address string, events chan<- string) (client *Session, err erro
 	}
 
 	client = &Session{
-		conn,
-		bufio.NewReader(conn),
-		bufio.NewWriter(conn),
-		make(chan string),
-		make(chan bool, 2),
-		make(chan error, 2),
-		events,
-		false,
+		conn:   conn,
+		reader: bufio.NewReader(conn),
+		writer: bufio.NewWriter(conn),
+		input:  make(chan string),
+		output: make(chan bool, 2),
+		done:   make(chan error, 2),
+		events: events,
 	}
 
 	go func() {

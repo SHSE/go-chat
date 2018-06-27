@@ -34,8 +34,8 @@ var (
 
 func NewChat(unicast transport.Unicast) *Chat {
 	return &Chat{
-		make(map[int]user, 128),
-		unicast,
+		users:   make(map[int]user, 128),
+		unicast: unicast,
 	}
 }
 

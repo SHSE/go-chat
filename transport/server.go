@@ -25,10 +25,7 @@ func newClient(id int, conn net.Conn) client {
 }
 
 func (c client) close() {
-	select {
-	case c.closing <- struct{}{}:
-	default:
-	}
+	c.closing <- struct{}{}
 }
 
 func (c client) send(message string) {
@@ -105,15 +102,13 @@ type Server struct {
 
 func NewServer(logger *zap.Logger, metrics prometheus.Registerer) *Server {
 	return &Server{
-		make(chan struct{}, 1),
-		logger,
-		sync.Map{},
-		0,
-		make(chan Command),
-		make(chan client),
-		make(chan client),
-		make(chan struct{}, 1),
-		metrics,
+		closing:      make(chan struct{}, 1),
+		logger:       logger,
+		commands:     make(chan Command),
+		connected:    make(chan client),
+		disconnected: make(chan client),
+		done:         make(chan struct{}, 1),
+		metrics:      metrics,
 	}
 }
 
@@ -160,7 +155,6 @@ func (s *Server) Run(ctx context.Context, address string, handler CommandHandler
 		s.connected <- client
 	}
 
-	listener.Close()
 	s.Close()
 
 	s.logger.Info("Shutdown completed")
