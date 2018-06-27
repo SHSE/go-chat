@@ -1,18 +1,11 @@
-FROM golang:1.10.1 as build
+FROM golang:1.10.3 as build
 RUN go get -u golang.org/x/vgo
 WORKDIR $GOPATH/src/chat
-
-# Caching dependencies only
-COPY go.mod .
-COPY cmd/chat/main.go .
-RUN vgo verify
-
-# Adding the rest of the code
-ADD cmd/chat .
+ADD . ./
 RUN vgo install ./...
 
 # Downloading test deps
-RUN vgo test -run=none
+RUN vgo test -run=none ./chat ./transport
 
 FROM gcr.io/distroless/base
 COPY --from=build /go/bin/chat /

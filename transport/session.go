@@ -1,4 +1,4 @@
-package main
+package transport
 
 import (
 	"bufio"
@@ -84,25 +84,25 @@ func NewSession(address string, events chan<- string) (client *Session, err erro
 	return
 }
 
-func (session *Session) SendCommand(name string, args []string) (bool, error) {
-	session.input <- fmt.Sprintf("%s %s", name, strings.Join(args, " "))
+func (s *Session) SendCommand(name string, args []string) (bool, error) {
+	s.input <- fmt.Sprintf("%s %s", name, strings.Join(args, " "))
 
 	select {
-	case resp := <-session.output:
+	case resp := <-s.output:
 		return resp, nil
-	case err := <-session.done:
+	case err := <-s.done:
 		return false, err
 	}
 }
 
-func (session *Session) Close() {
-	if session.closed {
+func (s *Session) Close() {
+	if s.closed {
 		return
 	}
 
-	session.conn.Close()
-	close(session.input)
-	close(session.output)
-	close(session.events)
-	session.closed = true
+	s.conn.Close()
+	close(s.input)
+	close(s.output)
+	close(s.events)
+	s.closed = true
 }

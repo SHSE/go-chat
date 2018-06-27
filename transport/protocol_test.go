@@ -1,4 +1,4 @@
-package main
+package transport
 
 import (
 	"context"
@@ -9,34 +9,35 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 	"testing"
+	"github.com/stretchr/testify/require"
 )
 
 type testContext struct {
-	commands    chan command
+	commands    chan Command
 	connects    chan int
 	disconnects chan int
 	events      chan string
-	unicast     unicast
+	unicast     Unicast
 	nextResult  error
 }
 
-func (context *testContext) command(command command) error {
-	context.commands <- command
-	result := context.nextResult
-	context.nextResult = nil
+func (c *testContext) Command(command Command) error {
+	c.commands <- command
+	result := c.nextResult
+	c.nextResult = nil
 	return result
 }
 
-func (context *testContext) connected(clientId int) {
-	context.connects <- clientId
+func (c *testContext) Connected(clientId int) {
+	c.connects <- clientId
 }
 
-func (context *testContext) disconnected(clientId int) {
-	context.disconnects <- clientId
+func (c *testContext) Disconnected(clientId int) {
+	c.disconnects <- clientId
 }
 
-func (context *testContext) waitForEvent(t *testing.T, event string) {
-	for event := range context.events {
+func (c *testContext) waitForEvent(t *testing.T, event string) {
+	for event := range c.events {
 		if event == event {
 			return
 		}
@@ -45,12 +46,12 @@ func (context *testContext) waitForEvent(t *testing.T, event string) {
 	t.Fail()
 }
 
-func runTestServer(t *testing.T) (stop func(), address string, textCtx *testContext) {
+func runTestServer(t *testing.T) (func(), string, *testContext) {
 	ctx, cancel := context.WithCancel(context.Background())
 	logger, _ := zap.NewDevelopment()
 	server := NewServer(logger, prometheus.NewRegistry())
-	textCtx = &testContext{
-		make(chan command, 100),
+	testCtx := &testContext{
+		make(chan Command, 100),
 		make(chan int, 100),
 		make(chan int, 100),
 		make(chan string, 100),
@@ -60,24 +61,22 @@ func runTestServer(t *testing.T) (stop func(), address string, textCtx *testCont
 
 	port, err := freeport.GetFreePort()
 
-	if err != nil {
-		assert.Nil(t, err)
-	}
+	require.NoError(t, err)
 
-	address = fmt.Sprintf("localhost:%d", port)
+	address := fmt.Sprintf("localhost:%d", port)
 
 	done := make(chan error, 1)
 
 	go func() {
-		done <- server.Run(ctx, address, textCtx)
+		done <- server.Run(ctx, address, testCtx)
 	}()
 
-	stop = func() {
+	stop := func() {
 		cancel()
 		<-done
 	}
 
-	return
+	return stop, address, testCtx
 }
 
 func withServer(t *testing.T, action func(*testContext, string)) {
@@ -100,14 +99,14 @@ func withSession(t *testing.T, action func(*testContext, *Session)) {
 	})
 }
 
-func (session *Session) sendCommandAndExpectOK(t *testing.T, name string, args []string) {
-	result, err := session.SendCommand(name, args)
+func (s *Session) sendCommandAndExpectOK(t *testing.T, name string, args []string) {
+	result, err := s.SendCommand(name, args)
 	assert.True(t, result)
 	assert.Nil(t, err)
 }
 
-func (session *Session) join(t *testing.T, name string) {
-	session.sendCommandAndExpectOK(t, "join", []string{name})
+func (s *Session) join(t *testing.T, name string) {
+	s.sendCommandAndExpectOK(t, "join", []string{name})
 }
 
 func TestInvokesConnectMethodWhenNewClientConnected(t *testing.T) {
@@ -122,7 +121,7 @@ func TestDeliversNotificationToClient(t *testing.T) {
 
 		session.join(t, "john")
 
-		context.unicast.sendTo(clientId, "hello")
+		context.unicast.SendTo(clientId, "hello")
 
 		context.waitForEvent(t, "hello")
 	})

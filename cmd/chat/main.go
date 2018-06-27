@@ -13,6 +13,8 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"github.com/shse/go-chat/transport"
+	"github.com/shse/go-chat/chat"
 )
 
 type Config struct {
@@ -61,7 +63,7 @@ func main() {
 		cancel()
 	}()
 
-	server := NewServer(logger, prometheus.DefaultRegisterer)
-	chat := NewChat(server)
-	server.Run(ctx, address, chat)
+	server := transport.NewServer(logger, prometheus.DefaultRegisterer)
+	app := chat.NewChat(server)
+	server.Run(ctx, address, app)
 }

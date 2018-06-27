@@ -14,8 +14,8 @@ bench-docker:
 run: build
 	CHAT_PORT=3000 ./build/chat
 
-test:
-	vgo test -v -cover -timeout=3s ./cmd/chat
+test: build
+	vgo test -v -cover -timeout=10s ./chat ./transport
 
 archive: clean
 	git archive --format=tar.gz --prefix=chat/ -o build/chat.tar.gz HEAD

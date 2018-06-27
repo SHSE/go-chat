@@ -1,9 +1,10 @@
-package main
+package chat
 
 import (
 	"fmt"
 	"github.com/stretchr/testify/assert"
 	"testing"
+	"github.com/shse/go-chat/transport"
 )
 
 type unicastMessage struct {
@@ -21,12 +22,12 @@ func newTestUnicast() testUnicast {
 	}
 }
 
-func (unicast testUnicast) sendTo(clientId int, message string) {
-	unicast.messages <- unicastMessage{clientId, message}
+func (u testUnicast) SendTo(clientId int, message string) {
+	u.messages <- unicastMessage{clientId, message}
 }
 
-func (unicast testUnicast) waitForMessage(t *testing.T, clientId int, data string) {
-	for message := range unicast.messages {
+func (u testUnicast) waitForMessage(t *testing.T, clientId int, data string) {
+	for message := range u.messages {
 		fmt.Printf("Received message for %d: %s\n", message.clientId, message.message)
 
 		if message.clientId == clientId && message.message == data {
@@ -45,20 +46,20 @@ func testChat() (*Chat, testUnicast) {
 	return chat, u
 }
 
-func (chat *Chat) executeCommandAndExpectSuccess(t *testing.T, clientId int, name string, args []string) {
-	assert.Nil(t, chat.command(command{clientId, name, args}))
+func (c *Chat) executeCommandAndExpectSuccess(t *testing.T, clientId int, name string, args []string) {
+	assert.Nil(t, c.Command(transport.Command{clientId, name, args}))
 }
 
-func (chat *Chat) executeCommandAndExpectError(t *testing.T, clientId int, name string, args []string) (err error) {
-	err = chat.command(command{clientId, name, args})
-	assert.NotNil(t, err)
+func (c *Chat) executeCommandAndExpectError(t *testing.T, clientId int, name string, args []string) (err error) {
+	err = c.Command(transport.Command{ClientId: clientId, Name: name, Args: args})
+	assert.Error(t, err)
 	return
 }
 
 func TestSendsGreetingWhenConnected(t *testing.T) {
 	chat, u := testChat()
 
-	chat.connected(1)
+	chat.Connected(1)
 
 	assert.Equal(t, unicastMessage{1, "Welcome!"}, <-u.messages)
 }
@@ -66,8 +67,8 @@ func TestSendsGreetingWhenConnected(t *testing.T) {
 func TestNotifiesEveryoneAfterUserJoined(t *testing.T) {
 	chat, u := testChat()
 
-	chat.connected(1)
-	err := chat.command(command{1, "join", []string{"john"}})
+	chat.Connected(1)
+	err := chat.Command(transport.Command{ClientId: 1, Name: "join", Args: []string{"john"}})
 
 	assert.Nil(t, err)
 
@@ -77,13 +78,13 @@ func TestNotifiesEveryoneAfterUserJoined(t *testing.T) {
 func TestNotifiesEveryoneAfterUserLeft(t *testing.T) {
 	chat, u := testChat()
 
-	chat.connected(1)
-	chat.connected(2)
+	chat.Connected(1)
+	chat.Connected(2)
 
 	chat.executeCommandAndExpectSuccess(t, 1, "join", []string{"john"})
 	chat.executeCommandAndExpectSuccess(t, 2, "join", []string{"alex"})
 
-	chat.disconnected(1)
+	chat.Disconnected(1)
 
 	u.waitForMessage(t, 2, "User john left")
 }
@@ -91,16 +92,16 @@ func TestNotifiesEveryoneAfterUserLeft(t *testing.T) {
 func TestDoesNotAllowToJoinIfNameAlreadyExists(t *testing.T) {
 	chat, _ := testChat()
 
-	chat.connected(1)
-	chat.connected(2)
+	chat.Connected(1)
+	chat.Connected(2)
 
 	var err error
 
-	err = chat.command(command{1, "join", []string{"john"}})
+	err = chat.Command(transport.Command{ClientId: 1, Name: "join", Args: []string{"john"}})
 
 	assert.Nil(t, err)
 
-	err = chat.command(command{2, "join", []string{"john"}})
+	err = chat.Command(transport.Command{ClientId: 2, Name: "join", Args: []string{"john"}})
 
 	assert.NotNil(t, err)
 }
@@ -108,8 +109,8 @@ func TestDoesNotAllowToJoinIfNameAlreadyExists(t *testing.T) {
 func TestDoesNotAllowToRenameIfNameAlreadyExists(t *testing.T) {
 	chat, _ := testChat()
 
-	chat.connected(1)
-	chat.connected(2)
+	chat.Connected(1)
+	chat.Connected(2)
 
 	chat.executeCommandAndExpectSuccess(t, 1, "join", []string{"john"})
 	chat.executeCommandAndExpectSuccess(t, 2, "join", []string{"alex"})
@@ -120,8 +121,8 @@ func TestDoesNotAllowToRenameIfNameAlreadyExists(t *testing.T) {
 func TestNotifiesEveryoneAfterUserChangedHisName(t *testing.T) {
 	chat, u := testChat()
 
-	chat.connected(1)
-	chat.connected(2)
+	chat.Connected(1)
+	chat.Connected(2)
 
 	chat.executeCommandAndExpectSuccess(t, 1, "join", []string{"john"})
 	chat.executeCommandAndExpectSuccess(t, 2, "join", []string{"alex"})
@@ -134,8 +135,8 @@ func TestNotifiesEveryoneAfterUserChangedHisName(t *testing.T) {
 func TestDeliversUserMessages(t *testing.T) {
 	chat, u := testChat()
 
-	chat.connected(1)
-	chat.connected(2)
+	chat.Connected(1)
+	chat.Connected(2)
 
 	chat.executeCommandAndExpectSuccess(t, 1, "join", []string{"john"})
 	chat.executeCommandAndExpectSuccess(t, 2, "join", []string{"alex"})
@@ -148,7 +149,7 @@ func TestDeliversUserMessages(t *testing.T) {
 func TestReturnsErrorWhenJoinTwice(t *testing.T) {
 	chat, _ := testChat()
 
-	chat.connected(1)
+	chat.Connected(1)
 
 	chat.executeCommandAndExpectSuccess(t, 1, "join", []string{"john"})
 	chat.executeCommandAndExpectError(t, 1, "join", []string{"john"})
@@ -157,7 +158,7 @@ func TestReturnsErrorWhenJoinTwice(t *testing.T) {
 func TestReturnsErrorWhenJoinWithoutName(t *testing.T) {
 	chat, _ := testChat()
 
-	chat.connected(1)
+	chat.Connected(1)
 
 	chat.executeCommandAndExpectError(t, 1, "join", []string{})
 }
@@ -165,7 +166,7 @@ func TestReturnsErrorWhenJoinWithoutName(t *testing.T) {
 func TestReturnsErrorWhenCallSayWithoutText(t *testing.T) {
 	chat, _ := testChat()
 
-	chat.connected(1)
+	chat.Connected(1)
 	chat.executeCommandAndExpectSuccess(t, 1, "join", []string{"john"})
 
 	chat.executeCommandAndExpectError(t, 1, "say", []string{})
@@ -174,7 +175,7 @@ func TestReturnsErrorWhenCallSayWithoutText(t *testing.T) {
 func TestReturnsErrorWhenRenameWithoutName(t *testing.T) {
 	chat, _ := testChat()
 
-	chat.connected(1)
+	chat.Connected(1)
 	chat.executeCommandAndExpectSuccess(t, 1, "join", []string{"john"})
 
 	chat.executeCommandAndExpectError(t, 1, "rename", []string{})

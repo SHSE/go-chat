@@ -1,4 +1,4 @@
-package main
+package transport
 
 import (
 	"bufio"
@@ -24,19 +24,19 @@ func newClient(id int, conn net.Conn) client {
 	return client{id, conn, make(chan string, 8), make(chan struct{}, 1)}
 }
 
-func (client client) close() {
+func (c client) close() {
 	select {
-	case client.closing <- struct{}{}:
+	case c.closing <- struct{}{}:
 	default:
 	}
 }
 
-func (client client) send(message string) {
-	client.messages <- message
+func (c client) send(message string) {
+	c.messages <- message
 }
 
-func (client client) receiveCommands(server *Server) {
-	reader := bufio.NewReader(client.conn)
+func (c client) receiveCommands(server *Server) {
+	reader := bufio.NewReader(c.conn)
 
 	for {
 		text, err := reader.ReadString('\n')
@@ -54,28 +54,28 @@ func (client client) receiveCommands(server *Server) {
 		parts := strings.Split(data, " ")
 		name, args := parts[0], parts[1:]
 
-		server.commands <- command{client.id, name, args}
+		server.commands <- Command{c.id, name, args}
 	}
 
-	server.disconnected <- client
+	server.disconnected <- c
 }
 
-func (client client) deliverMessages() {
-	writer := bufio.NewWriter(client.conn)
+func (c client) deliverMessages() {
+	writer := bufio.NewWriter(c.conn)
 
 	for {
 		select {
-		case <-client.closing:
-			client.conn.Close()
+		case <-c.closing:
+			c.conn.Close()
 			return
 
-		case message := <-client.messages:
+		case message := <-c.messages:
 			writer.WriteString(message + "\n")
 
 		buffering:
 			for {
 				select {
-				case message, ok := <-client.messages:
+				case message, ok := <-c.messages:
 					if !ok {
 						break buffering
 					}
@@ -96,7 +96,7 @@ type Server struct {
 	logger       *zap.Logger
 	connections  sync.Map
 	count        int
-	commands     chan command
+	commands     chan Command
 	connected    chan client
 	disconnected chan client
 	done         chan struct{}
@@ -109,7 +109,7 @@ func NewServer(logger *zap.Logger, metrics prometheus.Registerer) *Server {
 		logger,
 		sync.Map{},
 		0,
-		make(chan command),
+		make(chan Command),
 		make(chan client),
 		make(chan client),
 		make(chan struct{}, 1),
@@ -117,23 +117,23 @@ func NewServer(logger *zap.Logger, metrics prometheus.Registerer) *Server {
 	}
 }
 
-func (server *Server) Close() {
-	server.closing <- struct{}{}
-	<-server.done
+func (s *Server) Close() {
+	s.closing <- struct{}{}
+	<-s.done
 }
 
-func (server *Server) Run(ctx context.Context, address string, handler commandHandler) error {
+func (s *Server) Run(ctx context.Context, address string, handler CommandHandler) error {
 	listener, err := net.Listen("tcp", address)
 
 	if err != nil {
 		return err
 	}
 
-	server.logger.Info("Server started", zap.String("address", address))
+	s.logger.Info("Server started", zap.String("address", address))
 
 	var clientCounter = 0
 
-	go server.dispatch(handler)
+	go s.dispatch(handler)
 
 	go func() {
 		<-ctx.Done()
@@ -148,7 +148,7 @@ func (server *Server) Run(ctx context.Context, address string, handler commandHa
 		}
 
 		if err != nil {
-			server.logger.Error("Failed to accept connection", zap.Error(err))
+			s.logger.Error("Failed to accept connection", zap.Error(err))
 			conn.Close()
 			continue
 		}
@@ -157,96 +157,96 @@ func (server *Server) Run(ctx context.Context, address string, handler commandHa
 
 		client := newClient(clientCounter, conn)
 
-		server.connected <- client
+		s.connected <- client
 	}
 
 	listener.Close()
-	server.Close()
+	s.Close()
 
-	server.logger.Info("Shutdown completed")
+	s.logger.Info("Shutdown completed")
 
 	return nil
 }
 
-func (server *Server) sendTo(clientId int, data string) {
-	value, found := server.connections.Load(clientId)
+func (s *Server) SendTo(clientId int, data string) {
+	value, found := s.connections.Load(clientId)
 
 	if found {
 		value.(client).send(data)
 	}
 }
 
-func (server *Server) shutdown() bool {
-	if server.count == 0 {
+func (s *Server) shutdown() bool {
+	if s.count == 0 {
 		return false
 	}
 
 	select {
-	case <-server.commands:
-	case <-server.disconnected:
-		server.count--
+	case <-s.commands:
+	case <-s.disconnected:
+		s.count--
 
-		if server.count == 0 {
+		if s.count == 0 {
 			return false
 		}
 	}
 	return true
 }
 
-func (server *Server) dispatch(handler commandHandler) {
+func (s *Server) dispatch(handler CommandHandler) {
 	connected := prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "connected_clients",
-		Help: "Number of connected clients."})
+		Help: "Number of Connected clients."})
 
 	commandTime := prometheus.NewSummary(prometheus.SummaryOpts{
 		Name: "command_time",
 		Help: "Command duration.",
 	})
 
-	server.metrics.MustRegister(connected)
-	server.metrics.MustRegister(commandTime)
+	s.metrics.MustRegister(connected)
+	s.metrics.MustRegister(commandTime)
 
 	for {
 		select {
-		case client := <-server.connected:
-			server.connections.Store(client.id, client)
-			server.count++
-			handler.connected(client.id)
+		case client := <-s.connected:
+			s.connections.Store(client.id, client)
+			s.count++
+			handler.Connected(client.id)
 			go client.deliverMessages()
-			go client.receiveCommands(server)
+			go client.receiveCommands(s)
 			connected.Inc()
 
-		case client := <-server.disconnected:
-			server.connections.Delete(client.id)
-			server.count--
-			handler.disconnected(client.id)
+		case client := <-s.disconnected:
+			s.connections.Delete(client.id)
+			s.count--
+			handler.Disconnected(client.id)
 			client.close()
 			connected.Dec()
 
-		case command := <-server.commands:
+		case command := <-s.commands:
 			started := time.Now()
-			err := handler.command(command)
+			err := handler.Command(command)
 
 			if err != nil {
-				server.sendTo(command.clientId, "error "+err.Error())
+				s.SendTo(command.ClientId, "error "+err.Error())
 			} else {
-				server.sendTo(command.clientId, "ok")
+				s.SendTo(command.ClientId, "ok")
 			}
 
 			commandTime.Observe(time.Since(started).Seconds())
 
-		case <-server.closing:
-			server.connections.Range(func(key, value interface{}) bool {
+		case <-s.closing:
+			s.connections.Range(func(key, value interface{}) bool {
 				client := value.(client)
 				client.messages <- MessageServerIsShuttingDown
 				client.close()
 				return true
 			})
 
-			for server.shutdown() {
+			for s.shutdown() {
 			}
 
-			server.done <- struct{}{}
+			s.done <- struct{}{}
 			return
 		}
 	}
